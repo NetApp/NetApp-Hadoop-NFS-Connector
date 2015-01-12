@@ -1,0 +1,7 @@
+Dependencies
+Project/Module/Version/How-Used/License
+Apache Hadoop/hadoop-common/2.4.0/Binary/Apache License Version 2.0
+Apache Hadoop/hadoop-nfs/2.4.0/Binary/Apache License Version 2.0
+Netty Project/netty-all/4.0.24.Final/Binary/Apache License Version 2.0
+Apache Commons CLI/commons-cli/1.2/Binary/Apache License Version 2.0
+JUnit/junit/4.0/Binary/Eclipse Public License 1.0
