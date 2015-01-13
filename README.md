@@ -7,7 +7,7 @@ How to use this connector
 mvn clean package
 <li>Copy the jar file to the shared common library directory based on your Hadoop installation. For example, for hadoop-2.4.1:</li>
 cp target/hadoop-connector-nfsv3-1.0.jar $HADOOP_HOME/share/hadoop/common/lib/
-<li>Add parameters of NFSv3 connector into core-site.xml located in Hadoop configuration directory(e.g. for hadoop-2.4.1: $HADOOPHOME/conf)</li>
+<li>Add parameters of NFSv3 connector into core-site.xml located in Hadoop configuration directory(e.g. for hadoop-2.4.1: $HADOOP_HOME/conf)</li>
 ```
   <property>
       <name>fs.defaultFS</name>
