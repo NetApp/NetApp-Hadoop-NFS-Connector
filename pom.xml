@@ -6,11 +6,11 @@
   <packaging>jar</packaging>
   <version>1.0</version>
   <name>hadoop-nfsv3</name>
-  <url>http://maven.apache.org</url>
+  <url>https://github.com/NetApp/NetApp-Hadoop-NFS-Connector</url>
   
   <profiles>
     <profile>
-      <id>defaultProfile</id>
+      <id>build-profile</id>
       <activation>
 	<activeByDefault>true</activeByDefault>
       </activation>
@@ -59,7 +59,7 @@
       </build>
     </profile>
     <profile>
-      <id>2ndProfile</id>
+      <id>test-profile</id>
       <activation>
 	<property>
 	  <name>NFSTestServer</name>
