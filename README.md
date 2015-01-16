@@ -4,7 +4,7 @@ NetApp-Hadoop-NFS-Connector
 Overview
 -------------------------------------
 
-The Hadoop NFS Connector allows Apache Hadoop (2.2+) and Apache Spark (1.2+) to use a NFSv3 storage server as a storage endpoint. The NFS Connector can two in two modes: (1) secondary filesystem - where Hadoop/Spark runs using HDFS as its primary storage and can use NFS as a second storage endpoint, and (2) primary filesystem - where Hadoop/Spark runs entirely on a NFSv3 storage server. 
+The Hadoop NFS Connector allows Apache Hadoop (2.2+) and Apache Spark (1.2+) to use a NFSv3 storage server as a storage endpoint. The NFS Connector supports two modes: (1) secondary filesystem - where Hadoop/Spark runs using HDFS as its primary storage and can use NFS as a second storage endpoint, and (2) primary filesystem - where Hadoop/Spark runs entirely on a NFSv3 storage server. 
 
 The code is written in a way such that existing applications do not have to change. All one has to do is to copy the connector jar into the lib/ directory of Hadoop/Spark. Then, modify core-site.xml to provide the necessary details.
 
