@@ -8,6 +8,8 @@ The Hadoop NFS Connector allows Apache Hadoop (2.2+) and Apache Spark (1.2+) to 
 
 The code is written in a way such that existing applications do not have to change. All one has to do is to copy the connector jar into the lib/ directory of Hadoop/Spark. Then, modify core-site.xml to provide the necessary details.
 
+**NOTE: The code is in beta. We would love for you to try it out and give us feedback.**
+
 This is the first release and it does the following:
 * Connects to a NFSv3 storage server supporting AUTH_NONE or AUTH_SYS authentication method.
 * Works with Apache Hadoop (vanilla) 2.2 or newer, Hortonworks HDP 2.2 or newer 
