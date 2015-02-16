@@ -21,20 +21,23 @@ import org.apache.hadoop.fs.nfs.NFSv3FileSystemStore;
 import org.apache.hadoop.nfs.nfs3.FileHandle;
 import org.apache.hadoop.nfs.nfs3.Nfs3Status;
 import org.apache.hadoop.nfs.nfs3.response.COMMIT3Response;
+import org.apache.hadoop.oncrpc.security.Credentials;
 
 public class Commit implements Callable<Commit> {
 
   final NFSv3FileSystemStore store;
   final FileHandle handle;
+  final Credentials credentials;
   
-  public Commit(NFSBufferedOutputStream stream, NFSv3FileSystemStore store, FileHandle handle, Long offset, Integer length) {
+  public Commit(NFSBufferedOutputStream stream, NFSv3FileSystemStore store, FileHandle handle, Credentials credentials, Long offset, Integer length) {
     this.store = store;
     this.handle = handle;
+    this.credentials = credentials;
   }
   
   @Override
   public Commit call() throws Exception {
-    COMMIT3Response response = store.commit(handle, 0L, 0, store.getCredentials());
+    COMMIT3Response response = store.commit(handle, 0L, 0, credentials);
     int status = response.getStatus();
     if (status != Nfs3Status.NFS3_OK) {
       throw new IOException("Commit error: status=" + status);

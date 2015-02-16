@@ -36,26 +36,26 @@ import org.apache.hadoop.fs.nfs.NFSv3FileSystemStore;
 import org.apache.hadoop.fs.nfs.StreamStatistics;
 import org.apache.hadoop.nfs.nfs3.FileHandle;
 import org.apache.hadoop.nfs.nfs3.Nfs3FileAttributes;
+import org.apache.hadoop.oncrpc.security.Credentials;
 
 public class NFSBufferedOutputStream extends OutputStream {
 
   final FileHandle handle;
+  final Credentials credentials;
   final Path path;
   final String pathString;
   final StreamStatistics statistics;
   final NFSv3FileSystemStore store;
   final AtomicBoolean closed;
   final int blockSizeBits;
-  final int poolSize;
   final ExecutorService executors;
   final List<Future<Write>> ongoing;
 
   long fileOffset;
   StreamBlock currentBlock;
 
-  private static final int MIN_WRITEBACK_POOL_SIZE = 1;
-  private static final int MAX_WRITEBACK_POOL_SIZE = 512;
-  private static final int DEFAULT_WRITEBACK_POOL_SIZE = 128;
+  private static final int MAX_WRITEBACK_POOL_SIZE = 256;
+  private static final int DEFAULT_WRITEBACK_POOL_SIZE = 4;
 
   static final AtomicInteger streamId;
 
@@ -66,23 +66,17 @@ public class NFSBufferedOutputStream extends OutputStream {
   }
 
   public NFSBufferedOutputStream(Configuration configuration, FileHandle handle, Path path,
-      NFSv3FileSystemStore store, int blockSizeBits, boolean append) throws IOException {
+      NFSv3FileSystemStore store, Credentials credentials, boolean append) throws IOException {
 
     this.handle = handle;
+    this.credentials = credentials;
     this.path = path;
     this.pathString = path.toUri().getPath();
-
-    poolSize =
-        Math.min(
-            MAX_WRITEBACK_POOL_SIZE,
-            Math.max(MIN_WRITEBACK_POOL_SIZE,
-                configuration.getInt("fs.nfs.numwritebackthreads", DEFAULT_WRITEBACK_POOL_SIZE)));
-
     this.statistics =
         new StreamStatistics(NFSBufferedInputStream.class + pathString, streamId.getAndIncrement(),
             false);
     this.store = store;
-    this.blockSizeBits = blockSizeBits;
+    this.blockSizeBits = store.getWriteSizeBits();
     this.currentBlock = null;
     this.closed = new AtomicBoolean(false);
 
@@ -90,13 +84,13 @@ public class NFSBufferedOutputStream extends OutputStream {
 
     // Create the task queues
     executors =
-        new ThreadPoolExecutor(32, poolSize, 1, TimeUnit.SECONDS,
+        new ThreadPoolExecutor(DEFAULT_WRITEBACK_POOL_SIZE, MAX_WRITEBACK_POOL_SIZE, 5, TimeUnit.SECONDS,
             new LinkedBlockingDeque<Runnable>(1024), new ThreadPoolExecutor.CallerRunsPolicy());
-    ongoing = new LinkedList<Future<Write>>();
+    ongoing = new LinkedList<>();
 
     // Set file offset to 0 or file length
     if (append) {
-      Nfs3FileAttributes attributes = store.getFileAttributes(handle, store.getCredentials());
+      Nfs3FileAttributes attributes = store.getFileAttributes(handle, credentials);
       if (attributes != null) {
         fileOffset = attributes.getSize();
         LOG.info("Appending to file so starting at offset = " + fileOffset);
@@ -201,7 +195,7 @@ public class NFSBufferedOutputStream extends OutputStream {
       }
 
       // Commit all outstanding changes
-      Commit commit = new Commit(this, store, handle, 0L, 0);
+      Commit commit = new Commit(this, store, handle, credentials, 0L, 0);
       Future<Commit> future = executors.submit(commit);
       while (true) {
         try {
@@ -221,15 +215,16 @@ public class NFSBufferedOutputStream extends OutputStream {
   public synchronized void close() throws IOException {
 
     boolean first = true;
+    long start = System.currentTimeMillis();
 
     if (closed.get() == true) {
       first = false;
       LOG.warn("Closing an already closed output stream");
     }
     closed.set(true);
-    
+
     // Shutdown the thread pool
-    if(first) {
+    if (first) {
       flush();
       executors.shutdown();
       try {
@@ -241,6 +236,7 @@ public class NFSBufferedOutputStream extends OutputStream {
 
     LOG.info(statistics);
     super.close();
+    LOG.info("OutputStream shutdown took " + (System.currentTimeMillis() - start) + " ms");
   }
 
   private StreamBlock getBlock(long blockId) throws IOException {
@@ -264,7 +260,7 @@ public class NFSBufferedOutputStream extends OutputStream {
           try {
             f.get();
             iter.remove();
-          } catch (InterruptedException interruped) {
+          } catch (InterruptedException interrupted) {
             // Ignore
           } catch (ExecutionException execution) {
             throw new IOException("Write back call failed", execution);
@@ -279,8 +275,7 @@ public class NFSBufferedOutputStream extends OutputStream {
     checkOngoing();
 
     // Submit new task
-    Write call =
-        new Write(store, handle, statistics, block.getBlockId(), currentBlock);
+    Write call = new Write(store, handle, credentials, statistics, block.getBlockId(), currentBlock);
     Future<Write> future = executors.submit(call);
     ongoing.add(future);
   }

@@ -20,7 +20,6 @@ import java.net.URISyntaxException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.DelegateToFileSystem;
-import org.apache.hadoop.nfs.nfs3.Nfs3Constant;
 
 public class NFSv3DelegatedFilesystem extends DelegateToFileSystem {
 	
@@ -30,6 +29,6 @@ public class NFSv3DelegatedFilesystem extends DelegateToFileSystem {
 
 	@Override
 	public int getUriDefaultPort() {
-		return Nfs3Constant.NFS3_SERVER_PORT_DEFAULT;
+		return NFSv3FileSystem.DEFAULT_NFS_PORT;
 	}
 }

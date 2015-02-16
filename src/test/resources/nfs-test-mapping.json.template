@@ -1,0 +1,62 @@
+{
+    "spaces": [
+	{
+	    "name": "laptop",
+	    "uri": "nfs://localhost:2049/",
+	    "options": {
+		"nfsExportPath": "/Volumes/export1",
+		"nfsReadSizeBits": 20,
+		"nfsWriteSizeBits": 20,
+		"nfsSplitSizeBits": 28,
+		"nfsAuthScheme": "AUTH_SYS",
+		"nfsUsername": "root",
+		"nfsGroupname": "root",
+		"nfsUid": 0,
+		"nfsGid": 0,
+		"nfsPort": 2049,
+		"nfsMountPort": -1,
+		"nfsRpcbindPort": 111
+	    },
+	    "endpoints": [
+		{
+		    "host": "nfs://localhost:2049",
+		    "exportPath": "/Volumes/export2",
+		    "path": "/export2"
+		},
+		{
+		    "host": "nfs://127.0.0.1:2049",
+		    "exportPath": "/Volumes/export2",
+		    "path": "/export2"
+		}                
+	    ]
+	},
+	{
+	    "name": "one-svm-two-junctions",
+	    "uri": "nfs://primary-ip-address:2049/",
+	    "options": {
+		"nfsExportPath": "/",
+		"nfsReadSizeBits": 20,
+		"nfsWriteSizeBits": 20,
+		"nfsSplitSizeBits": 28,
+		"nfsAuthScheme": "AUTH_SYS",
+		"nfsUsername": "root",
+		"nfsGroupname": "root",
+		"nfsUid": 0,
+		"nfsGid": 0,
+		"nfsPort": 2049,
+		"nfsMountPort": -1,
+		"nfsRpcbindPort": 111
+	    },
+	    "endpoints": [
+		{
+		    "host": "nfs://ip-of-controller-one:2049/",
+		    "path": "/junctioned-volume-one/"
+		},
+		{
+		    "host": "nfs://ip-of-controller-two:2049/",
+		    "path": "/junctioned-volume-two/"
+		}                
+	    ]
+	}
+    ]
+}

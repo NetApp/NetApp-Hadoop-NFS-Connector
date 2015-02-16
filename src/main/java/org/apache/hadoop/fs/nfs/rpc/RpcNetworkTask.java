@@ -17,6 +17,9 @@ package org.apache.hadoop.fs.nfs.rpc;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import org.apache.hadoop.oncrpc.RpcReply;
 import org.apache.hadoop.oncrpc.XDR;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -31,13 +34,12 @@ class RpcNetworkTask {
   RpcReply reply;
   XDR replyData;
   
-  long lastEnqueuedTime;
+  public static final Log LOG = LogFactory.getLog(RpcNetworkTask.class);
   
   public RpcNetworkTask(Integer xid, ChannelBuffer callData) {
     this.xid = xid;
     this.callData = callData;
-    this.lastEnqueuedTime = 0;
-    countdown = new CountDownLatch(2);
+    countdown = new CountDownLatch(1);
   }
   
   public int getXid() {
@@ -61,19 +63,12 @@ class RpcNetworkTask {
     return replyData;
   }
   
-  public void setEnqueueTime(long time) {
-    this.lastEnqueuedTime = time;
-  }
-  
-  public long getLastEnqueuedTime() {
-    return this.lastEnqueuedTime;
-  }
-  
   public boolean wait(int millis) {
     while(true) {
       try {
         return countdown.await(millis, TimeUnit.MILLISECONDS);
       } catch(InterruptedException exception) {
+        LOG.info("Thread got interrupted while waiting for task xid=" + xid + " to finish");
         continue;
       }
     }

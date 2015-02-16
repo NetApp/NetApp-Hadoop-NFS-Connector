@@ -11,14 +11,15 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-
 package org.apache.hadoop.fs.nfs.rpc;
 
-
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,31 +50,35 @@ public class RpcClient {
 
   final ClientBootstrap bootstrap;
   final Map<Integer, RpcNetworkTask> tasks;
+  final Queue<RpcNetworkTask> pending;
   final AtomicBoolean errored;
   final AtomicBoolean shutdown;
   final AtomicInteger xid;
+  final RpcClient client;
 
   ChannelFuture future;
 
-  public static final int RECONNECT_DELAY_MS = 5000;
+  public static final int RECONNECT_DELAY_MS = 5;
   public static final int MAX_RETRIES = 10;
-  public static final int MAX_RPCWAIT_MS = 10000;
+  public static final int MAX_RPCWAIT_MS = 60000;
+
+  public static final Timer timer = new HashedWheelTimer();
 
   public static final Log LOG = LogFactory.getLog(RpcClient.class);
 
-  public RpcClient(String hostname, int port) {
+  public RpcClient(String hostname, int port) throws IOException {
 
-    tasks = new ConcurrentHashMap<Integer, RpcNetworkTask>();
+    tasks = new ConcurrentHashMap<>();
+    pending = new ConcurrentLinkedQueue<>();
     xid = new AtomicInteger(new Random(System.currentTimeMillis()).nextInt(1024) * 1000000);
     errored = new AtomicBoolean(false);
     shutdown = new AtomicBoolean(false);
 
-    final Timer timer = new HashedWheelTimer();
     ChannelFactory factory =
         new NioClientSocketChannelFactory(Executors.newCachedThreadPool(),
-            Executors.newCachedThreadPool(), 1, 1);
+            Executors.newCachedThreadPool(), 1, 8);
 
-    final RpcClient client = this;
+    client = this;
     ChannelPipelineFactory pipelineFactory = new ChannelPipelineFactory() {
       @Override
       public ChannelPipeline getPipeline() {
@@ -86,13 +91,16 @@ public class RpcClient {
 
     bootstrap.setOption("remoteAddress", new InetSocketAddress(hostname, port));
     bootstrap.setOption("tcpNoDelay", true);
-    bootstrap.setOption("keepAlive", true);
+    bootstrap.setOption("keepAlive", false);
     bootstrap.setOption("soLinger", 0);
-    bootstrap.setOption("receiveBufferSize", 16 * 1024 * 1024);
-    bootstrap.setOption("sendBufferSize", 16 * 1024 * 1024);
+    bootstrap.setOption("receiveBufferSize", 32 * 1024 * 1024);
+    bootstrap.setOption("sendBufferSize", 32 * 1024 * 1024);
 
     future = bootstrap.connect();
-
+    future.awaitUninterruptibly();
+    if(future.isDone() && (future.isCancelled() || !future.isSuccess())) {
+        throw new IOException("Could not connect to " + hostname + " on port " + port);
+    }
   }
 
   public RpcMessage service(int program, int version, int procedure, XDR in, XDR out,
@@ -108,22 +116,29 @@ public class RpcClient {
     ChannelBuffer buf = XDR.writeMessageTcp(request, true);
     RpcNetworkTask task = new RpcNetworkTask(callXid, buf);
 
-    // Issue it and signal
-    synchronized (tasks) {
-      tasks.put(callXid, task);
-    }
-    task.signal();
+    // Issue the task
+    tasks.put(callXid, task);
+    pending.add(task);
+    sendToChannel();
 
     // Wait for task to complete
+    boolean completed = false;
     for (int i = 0; i < MAX_RETRIES; ++i) {
       if (task.wait(MAX_RPCWAIT_MS)) {
-        if (i > 0) {
-          LOG.debug("RPC: Call xid=" + task.getXid() + " completed with " + i + " retries");
-          // LOG.debug("exiting abruptly!!!!");
-          // System.exit(-1);
-        }
+        completed = true;
         break;
+      } else {
+        LOG.info("RPC: xid=" + callXid + " took too long, so retrying");
+        task = new RpcNetworkTask(callXid, buf);
+        tasks.put(callXid, task);
+        pending.add(task);
+        sendToChannel();
       }
+    }
+
+    if (!completed || task.getReply() == null) {
+      LOG.error("RPC: xid=" + callXid + " timed out");
+      throw new RpcException("RPC: xid=" + callXid + " timed out");
     }
 
     // Process reply and return
@@ -133,6 +148,7 @@ public class RpcClient {
       throw new RpcException("RPC: xid=" + callXid + " RpcReply request denied: " + reply);
     }
 
+    // Call was accepted so process the correct reply
     RpcAcceptedReply acceptedReply = (RpcAcceptedReply) reply;
     LOG.debug("RPC: xid=" + callXid + " completed successfully with acceptstate="
         + acceptedReply.getAcceptState());
@@ -143,7 +159,7 @@ public class RpcClient {
   }
 
   public void shutdown() {
-    LOG.info("Shutting down");
+    long start = System.currentTimeMillis();
     try {
       shutdown.set(true);
       future.getChannel().close();
@@ -151,6 +167,7 @@ public class RpcClient {
       bootstrap.shutdown();
     } finally {
       bootstrap.releaseExternalResources();
+      LOG.debug("RpcClient shutdown took " + (System.currentTimeMillis() - start) + " ms");
     }
   }
 
@@ -163,30 +180,25 @@ public class RpcClient {
   }
 
   protected RpcNetworkTask getTask() {
-    RpcNetworkTask task = null;
-    synchronized (tasks) {
-      for (RpcNetworkTask t : tasks.values()) {
-        if ((System.currentTimeMillis() - t.getLastEnqueuedTime()) > 10000) {
-          task = t;
-          task.setEnqueueTime(System.currentTimeMillis());
-          break;
-        }
-      }
-    }
-    return task;
+    return pending.poll();
   }
 
   protected void completeTask(int xid, RpcReply reply, XDR replyData) {
-    synchronized (tasks) {
-      if (tasks.containsKey(xid)) {
-        RpcNetworkTask found = tasks.remove(xid);
-        found.setReply(reply, replyData);
-        found.signal();
-        LOG.debug("RPC: Call finished for xid=" + xid);
-      } else {
-        LOG.error("RPC: Could not find original call for xid=" + xid);
-        errored.set(true);
+    RpcNetworkTask found = tasks.remove(xid);
+    if (found != null) {
+      found.setReply(reply, replyData);
+      found.signal();
+    }
+  }
+
+  protected void sendToChannel() {
+    try {
+      RpcNetworkTask task = getTask();
+      if (task != null) {
+        future.getChannel().write(task.getCallData());
       }
+    } catch (Exception ignore) {
+
     }
   }
 

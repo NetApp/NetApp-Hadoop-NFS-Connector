@@ -21,8 +21,11 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.nfs.rpc.RpcClient;
 import org.apache.hadoop.fs.nfs.rpc.RpcException;
+import org.apache.hadoop.fs.nfs.topology.Namespace;
+import org.apache.hadoop.fs.nfs.topology.NamespaceOptions;
 import org.apache.hadoop.mount.MountInterface;
 import org.apache.hadoop.oncrpc.RpcAcceptedReply;
+import org.apache.hadoop.oncrpc.RpcAcceptedReply.AcceptState;
 import org.apache.hadoop.oncrpc.RpcMessage;
 import org.apache.hadoop.oncrpc.XDR;
 import org.apache.hadoop.oncrpc.security.Credentials;
@@ -37,28 +40,28 @@ public class MountClient extends RpcClient {
   public final static Log LOG = LogFactory.getLog(MountClient.class);
   private final Credentials credentials;
 
-  public MountClient(String host, int port, Configuration conf) {
+  public MountClient(Namespace space, String host, int port) throws IOException {
     super(host, port);
 
-    // By default, we use AUTH_NONE for mount protocol, unless users specify
-    // AUTH_SYS in the configuration file.
-    if (conf != null) {
-      String credentialsFlavor = conf.get("fs.nfs.mount.auth.flavor", null);
-
-      if (credentialsFlavor != null
-          && (credentialsFlavor.equalsIgnoreCase("AUTH_SYS") || credentialsFlavor
-              .equalsIgnoreCase("AUTH_UNIX"))) {
+    // Check namespace for authentication scheme
+    if(space == null || space.getConfiguration() == null) {
+        throw new IOException("No namespace given");
+    }
+    
+    NamespaceOptions options = space.getConfiguration();
+    String authScheme = options.getNfsAuthScheme();
+    
+    if(authScheme != null && (authScheme.equalsIgnoreCase("AUTH_SYS") || authScheme.equalsIgnoreCase("AUTH_UNIX"))) {
         CredentialsSys sys = new CredentialsSys();
-        sys.setUID(0);
-        sys.setGID(0);
+        sys.setUID(options.getNfsUid());
+        sys.setGID(options.getNfsGid());
         sys.setStamp(new Long(System.currentTimeMillis()).intValue());
         credentials = sys;
-      } else {
-        credentials = new CredentialsNone();
-      }
-    } else {
-      credentials = new CredentialsNone();
     }
+    // Use AUTH_NONE by default
+    else {
+        credentials = new CredentialsNone();
+    }  
   }
 
   public MountMNTResponse mnt(String path) throws IOException {
@@ -79,9 +82,14 @@ public class MountClient extends RpcClient {
 
       if (reply instanceof RpcAcceptedReply) {
         RpcAcceptedReply accepted = (RpcAcceptedReply) reply;
-        LOG.debug("Mount MNT operation acceptState=" + accepted.getAcceptState());
-        mountMNTResponse = new MountMNTResponse(out.asReadOnlyWrap());
-        return mountMNTResponse;
+        if(accepted.getAcceptState().equals(AcceptState.SUCCESS)) {
+            LOG.debug("Mount MNT operation acceptState=" + accepted.getAcceptState());
+            mountMNTResponse = new MountMNTResponse(out.asReadOnlyWrap());
+            return mountMNTResponse;
+        } else {
+            LOG.error("Could not mount filesystem");
+            throw new IOException("Could not mount filesystem. Got status " + accepted.getAcceptState());
+        }
       } else {
         LOG.error("Mount MNT operation was not accepted");
         throw new IOException("Mount MNT operation was not accepted");

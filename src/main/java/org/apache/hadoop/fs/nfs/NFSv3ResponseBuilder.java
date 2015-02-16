@@ -371,7 +371,6 @@ public class NFSv3ResponseBuilder {
   public static List<Entry3> buildDirEntryList(XDR xdr) throws IOException {
     List<Entry3> entries = new LinkedList<Entry3>();
     boolean haveMore = xdr.readBoolean();
-    System.out.println("Has list of entries=" + haveMore);
     while(haveMore) {
       long fileId = xdr.readHyper();
       byte[] name = xdr.readVariableOpaque();
@@ -379,7 +378,6 @@ public class NFSv3ResponseBuilder {
       Entry3 entry = new Entry3(fileId, new String(name), cookie);
       entries.add(entry);
       haveMore = xdr.readBoolean();
-      System.out.println("haveMore=" + haveMore);
     }
     return entries;
   }

@@ -23,18 +23,21 @@ import org.apache.hadoop.nfs.nfs3.FileHandle;
 import org.apache.hadoop.nfs.nfs3.Nfs3Status;
 import org.apache.hadoop.nfs.nfs3.Nfs3Constant.WriteStableHow;
 import org.apache.hadoop.nfs.nfs3.response.WRITE3Response;
+import org.apache.hadoop.oncrpc.security.Credentials;
 
 public class Write implements Callable<Write> {
 
   final NFSv3FileSystemStore store;
   final FileHandle handle;
+  final Credentials credentials;
   final StreamStatistics statistics;
   final Long blockId;
   final StreamBlock block;
   
-  public Write(NFSv3FileSystemStore store, FileHandle handle, StreamStatistics statistics, Long blockId, StreamBlock block) {
+  public Write(NFSv3FileSystemStore store, FileHandle handle, Credentials credentials, StreamStatistics statistics, Long blockId, StreamBlock block) {
     this.store = store;
     this.handle = handle;
+    this.credentials = credentials;
     this.statistics = statistics;
     this.blockId = blockId;
     this.block = block;
@@ -48,7 +51,7 @@ public class Write implements Callable<Write> {
     byte buffer[] = new byte[block.getDataLength()];
     System.arraycopy(block.array(), block.getDataStartOffset(), buffer, 0, block.getDataLength());
     
-    WRITE3Response response = store.write(handle, writeOffset, block.getDataLength(), WriteStableHow.UNSTABLE, buffer, store.getCredentials());
+    WRITE3Response response = store.write(handle, writeOffset, block.getDataLength(), WriteStableHow.UNSTABLE, buffer, credentials);
     int status = response.getStatus();
     if (status != Nfs3Status.NFS3_OK) {
       throw new IOException("NFS write error: status=" + status);

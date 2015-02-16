@@ -39,7 +39,7 @@ public class PortmapClient extends RpcClient {
 
   public final static Log LOG = LogFactory.getLog(PortmapClient.class);
 
-  public PortmapClient(String host, int port) {
+  public PortmapClient(String host, int port) throws IOException {
     super(host, port);
   }
 

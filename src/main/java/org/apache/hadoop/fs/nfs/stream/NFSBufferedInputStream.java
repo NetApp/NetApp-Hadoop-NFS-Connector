@@ -1,19 +1,21 @@
 /**
  * Copyright 2014 NetApp Inc. All Rights Reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License
- * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
- * or implied. See the License for the specific language governing permissions and limitations under
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
  * the License.
  */
-
 package org.apache.hadoop.fs.nfs.stream;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
@@ -37,6 +39,7 @@ import org.apache.hadoop.fs.nfs.NFSv3FileSystemStore;
 import org.apache.hadoop.fs.nfs.StreamStatistics;
 import org.apache.hadoop.nfs.nfs3.FileHandle;
 import org.apache.hadoop.nfs.nfs3.Nfs3FileAttributes;
+import org.apache.hadoop.oncrpc.security.Credentials;
 
 public class NFSBufferedInputStream extends FSInputStream {
 
@@ -47,12 +50,12 @@ public class NFSBufferedInputStream extends FSInputStream {
 
   final NFSv3FileSystemStore store;
   final FileHandle handle;
+  final Credentials credentials;
 
   final String pathString;
   final int readBlockSizeBits;
   final long splitSize;
   final StreamStatistics statistics;
-  final int poolSize;
   final boolean doPrefetch;
   final AtomicBoolean closed;
   final ExecutorService executors;
@@ -61,14 +64,13 @@ public class NFSBufferedInputStream extends FSInputStream {
 
   static final AtomicInteger streamId;
 
-  public static final int DEFAULT_CACHE_SIZE_IN_BLOCKS = 512;
+  public static final int DEFAULT_CACHE_SIZE_IN_BLOCKS = 1024;
 
-  public static final int MIN_PREFETCH_POOL_SIZE = 1;
-  public static final int MAX_PREFETCH_POOL_SIZE = 512;
-  public static final int DEFAULT_PREFETCH_POOL_SIZE = 128;
+  public static final int MAX_PREFETCH_POOL_SIZE = 256;
+  public static final int DEFAULT_PREFETCH_POOL_SIZE = 4;
   public static final boolean DEFAULT_PREFETCH_ENABLED = true;
 
-  public static final int DEFAULT_READAHEAD_SIZE = 128;
+  public static final int DEFAULT_READAHEAD_SIZE = 256;
 
   public final static Log LOG = LogFactory.getLog(NFSBufferedInputStream.class);
 
@@ -76,40 +78,35 @@ public class NFSBufferedInputStream extends FSInputStream {
     streamId = new AtomicInteger(1);
   }
 
-  public NFSBufferedInputStream(Configuration configuration, NFSv3FileSystemStore store,
-      FileHandle handle, Path f, Configuration conf, int readBlockSizeBits, String scheme,
-      long splitSize, FileSystem.Statistics fsStat) throws IOException {
+  public NFSBufferedInputStream(NFSv3FileSystemStore store,
+      FileHandle handle, Path f, Configuration conf,
+      long splitSize, Credentials credentials, FileSystem.Statistics fsStat) throws IOException {
 
     this.store = store;
     this.handle = handle;
+    this.credentials = credentials;
     this.pathString = f.toUri().getPath();
 
-
-    poolSize =
-        Math.min(
-            MAX_PREFETCH_POOL_SIZE,
-            Math.max(MIN_PREFETCH_POOL_SIZE,
-                conf.getInt("fs.nfs.numprefetchthreads", DEFAULT_PREFETCH_POOL_SIZE)));
     doPrefetch = conf.getBoolean("fs.nfs.prefetch", DEFAULT_PREFETCH_ENABLED);
 
-
     this.fileOffset = 0L;
-    this.readBlockSizeBits = readBlockSizeBits;
+    this.readBlockSizeBits = store.getReadSizeBits();
     this.splitSize = splitSize;
     this.closed = new AtomicBoolean(false);
-    this.ongoing = new ConcurrentHashMap<Long, Future<Read>>(poolSize);
-    this.cache = new ConcurrentHashMap<Long, StreamBlock>(DEFAULT_CACHE_SIZE_IN_BLOCKS);
-    this.statistics =
-        new StreamStatistics(NFSBufferedInputStream.class + pathString, streamId.getAndIncrement(),
-            true);
-    this.executors = new ThreadPoolExecutor(32, poolSize, 1, TimeUnit.SECONDS,
-            new LinkedBlockingDeque<Runnable>(1024), new ThreadPoolExecutor.CallerRunsPolicy());
+    this.ongoing = new ConcurrentHashMap<>(DEFAULT_PREFETCH_POOL_SIZE);
+    this.cache = new ConcurrentHashMap<>(DEFAULT_CACHE_SIZE_IN_BLOCKS);
+    this.statistics
+    = new StreamStatistics(NFSBufferedInputStream.class + pathString, streamId.getAndIncrement(),
+        true);
+    this.executors = new ThreadPoolExecutor(DEFAULT_PREFETCH_POOL_SIZE, MAX_PREFETCH_POOL_SIZE, 5, TimeUnit.SECONDS,
+        new LinkedBlockingDeque<Runnable>(1024), new ThreadPoolExecutor.CallerRunsPolicy());
 
     // Keep track of the file length at file open
     // NOTE: The file does not get modified while this stream is open
-    Nfs3FileAttributes attributes = store.getFileAttributes(handle, store.getCredentials());
+    Nfs3FileAttributes attributes = store.getFileAttributes(handle, credentials);
     if (attributes != null) {
       this.fileLength = attributes.getSize();
+      this.prefetchBlockLimit = (long) (Math.min(fileLength, splitSize) >> readBlockSizeBits);
       if (this.fileLength < 0) {
         throw new IOException("File length is invalid: " + this.fileLength);
       }
@@ -122,7 +119,7 @@ public class NFSBufferedInputStream extends FSInputStream {
   @Override
   public synchronized void seek(long pos) throws IOException {
     if (pos > fileLength) {
-      throw new IOException("Cannot seek after EOF: pos=" + pos + ", fileLength=" + fileLength);
+      throw new EOFException("Cannot seek after EOF: pos=" + pos + ", fileLength=" + fileLength);
     }
     fileOffset = pos;
     prefetchBlockLimit = (long) (Math.min(fileLength, pos + this.splitSize) >> readBlockSizeBits);
@@ -176,7 +173,7 @@ public class NFSBufferedInputStream extends FSInputStream {
     int loOffset = (int) (fileOffset - (loBlockId << readBlockSizeBits));
     int hiOffset = (int) ((fileOffset + lengthToRead - 1) - (hiBlockId << readBlockSizeBits));
 
-    if(closed.get()) {
+    if (closed.get()) {
       LOG.warn("Reading from an already closed InputStream. Check your code");
     }
 
@@ -240,14 +237,18 @@ public class NFSBufferedInputStream extends FSInputStream {
 
     // Issue prefetch for upcoming blocks
     if (doPrefetch) {
-      for (long bid = blockId + 1; bid < blockId + DEFAULT_READAHEAD_SIZE; ++bid) {
+      if (blockId >= prefetchBlockLimit) {
+        prefetchBlockLimit += (long) (Math.min(fileLength, this.splitSize) >> readBlockSizeBits);
+        LOG.info("Changing prefetchBlockLimit to " + prefetchBlockLimit);
+      }
+      for (long bid = blockId + 1; bid < blockId + DEFAULT_READAHEAD_SIZE && bid < prefetchBlockLimit; ++bid) {
         if (!ongoing.containsKey(bid) && !cache.containsKey(bid)) {
           StreamBlock block = new StreamBlock(readBlockSizeBits);
           block.setBlockId(bid);
           block.setReady(false);
           cache.put(bid, block);
 
-          Read task = new Read(store, handle, statistics, bid, block);
+          Read task = new Read(store, handle, credentials, statistics, bid, block);
           Future<Read> future = executors.submit(task);
           ongoing.put(bid, future);
         }
@@ -257,14 +258,14 @@ public class NFSBufferedInputStream extends FSInputStream {
     // Block is being fetched, so wait for it
     if (ongoing.containsKey(blockId)) {
       Future<Read> future = ongoing.get(blockId);
-      while(true) {
+      while (true) {
         try {
           LOG.debug("Waiting for read task to complete ongoing reading block id=" + blockId);
           future.get();
           break;
-        } catch(InterruptedException interrupted) {
+        } catch (InterruptedException interrupted) {
           continue;
-        } catch(Exception error) {
+        } catch (Exception error) {
           throw new IOException("Read resulted in an error", error);
         }
       }
@@ -273,13 +274,13 @@ public class NFSBufferedInputStream extends FSInputStream {
     // Some prefetches are done, check for them
     for (Iterator<Entry<Long, Future<Read>>> iter = ongoing.entrySet().iterator(); iter.hasNext();) {
       Future<Read> future = iter.next().getValue();
-      if(future.isDone()) {
+      if (future.isDone()) {
         try {
           future.get();
           iter.remove();
-        } catch(InterruptedException interrupted) {
+        } catch (InterruptedException interrupted) {
           // Ignore
-        } catch(Exception error) {
+        } catch (Exception error) {
           throw new IOException("Prefetched resulted in error", error);
         }
       }
@@ -308,19 +309,18 @@ public class NFSBufferedInputStream extends FSInputStream {
       block.setReady(false);
       cache.put(blockId, block);
 
-      Read task = new Read(store, handle, statistics, blockId, block);
+      Read task = new Read(store, handle, credentials, statistics, blockId, block);
       Future<Read> future = executors.submit(task);
-      while(true) {
+      while (true) {
         try {
           future.get();
           break;
-        } catch(InterruptedException interrupted) {
+        } catch (InterruptedException interrupted) {
           continue;
-        } catch(Exception error) {
+        } catch (Exception error) {
           throw new IOException("Read resulted in an error", error);
         }
       }
-      LOG.info("Looping inside while loop");
     }
 
   }
@@ -329,22 +329,22 @@ public class NFSBufferedInputStream extends FSInputStream {
   public void close() throws IOException {
 
     boolean first = true;
-    if(closed.get()) {
+    if (closed.get()) {
       first = false;
       LOG.warn("Closing an already closed InputStream. Check your code");
     }
     closed.set(true);
 
     // Shutdown the thread pool
-    if(first) {
+    if (first) {
       executors.shutdown();
       try {
-        executors.awaitTermination(60, TimeUnit.SECONDS);
+        executors.awaitTermination(1, TimeUnit.SECONDS);
       } catch (InterruptedException exception) {
         // Ignore
       }
     }
-    
+
     LOG.info(statistics);
     super.close();
   }

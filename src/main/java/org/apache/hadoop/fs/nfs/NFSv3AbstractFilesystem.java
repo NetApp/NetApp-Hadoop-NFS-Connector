@@ -41,7 +41,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.UnresolvedLinkException;
 import org.apache.hadoop.fs.UnsupportedFileSystemException;
 import org.apache.hadoop.fs.permission.FsPermission;
-import org.apache.hadoop.nfs.nfs3.Nfs3Constant;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.util.Progressable;
 
@@ -88,7 +87,7 @@ public class NFSv3AbstractFilesystem extends AbstractFileSystem {
 
 	@Override
 	public int getUriDefaultPort() {
-		return Nfs3Constant.NFS3_SERVER_PORT_DEFAULT;
+		return NFSv3FileSystem.DEFAULT_NFS_PORT;
 	}
 	
 	@Override

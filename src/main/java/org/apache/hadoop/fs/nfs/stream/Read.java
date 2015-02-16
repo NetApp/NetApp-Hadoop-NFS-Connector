@@ -22,6 +22,7 @@ import org.apache.hadoop.fs.nfs.rpc.RpcException;
 import org.apache.hadoop.nfs.nfs3.FileHandle;
 import org.apache.hadoop.nfs.nfs3.Nfs3Status;
 import org.apache.hadoop.nfs.nfs3.response.READ3Response;
+import org.apache.hadoop.oncrpc.security.Credentials;
 
 public class Read implements Callable<Read> {
 
@@ -30,11 +31,13 @@ public class Read implements Callable<Read> {
   final StreamStatistics statistics;
   final Long blockId;
   final StreamBlock block;
+  final Credentials credentials;
 
-  public Read(NFSv3FileSystemStore store, FileHandle handle, StreamStatistics statistics,
+  public Read(NFSv3FileSystemStore store, FileHandle handle, Credentials credentials, StreamStatistics statistics,
       Long blockId, StreamBlock block) {
     this.store = store;
     this.handle = handle;
+    this.credentials = credentials;
     this.statistics = statistics;
     this.blockId = blockId;
     this.block = block;
@@ -46,7 +49,7 @@ public class Read implements Callable<Read> {
     long readOffset = (blockId << block.getBlockSizeBits());
 
     READ3Response read3Response =
-        store.read(handle, readOffset, block.getBlockSize(), store.getCredentials());
+        store.read(handle, readOffset, block.getBlockSize(), credentials);
     int status = read3Response.getStatus();
     if (status != Nfs3Status.NFS3_OK) {
       throw new RpcException("NFS_READ error: status=" + status);
