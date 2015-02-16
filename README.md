@@ -59,8 +59,8 @@ console> cp target/hadoop-connector-nfsv3-1.0.jar $HADOOP_HOME/share/hadoop/comm
       <value>nfs://<nfsserver>:2049</value>
   </property>
   <property>
-      <name>fs.nfs.mountdir</name>
-      <value><exported-path></value>
+      <name>fs.nfs.configuration</name>
+      <value><path-to-json-configuration-file>/nfs-mapping.json</value>
   </property>
   <property>
   <name>fs.nfs.impl</name>
@@ -69,22 +69,6 @@ console> cp target/hadoop-connector-nfsv3-1.0.jar $HADOOP_HOME/share/hadoop/comm
       <property>
       <name>fs.AbstractFileSystem.nfs.impl</name>
       <value>org.apache.hadoop.fs.nfs.NFSv3AbstractFilesystem</value>
-  </property>
-  <property>
-      <name>fs.nfs.auth.flavor</name>
-      <value>AUTH_SYS</value>
-  </property>
-      <property>
-      <name>fs.nfs.username</name>
-      <value><mapping-to-hadoop-username></value>
-  </property>
-  <property>
-      <name>fs.nfs.groupname</name>
-      <value><mapping-to-hadoop-groupname></value>
-  </property>
-  <property>
-      <name>fs.nfs.prefetch</name>
-      <value>true</value>
   </property>
 ```
 </li>
