@@ -60,7 +60,7 @@ public class RpcClient {
 
   public static final int RECONNECT_DELAY_MS = 5;
   public static final int MAX_RETRIES = 10;
-  public static final int MAX_RPCWAIT_MS = 60000;
+  public static final int MAX_RPCWAIT_MS = 10000;
 
   public static final Timer timer = new HashedWheelTimer();
 

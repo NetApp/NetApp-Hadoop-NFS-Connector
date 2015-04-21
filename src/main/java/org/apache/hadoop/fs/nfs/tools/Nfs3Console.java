@@ -15,6 +15,7 @@
 package org.apache.hadoop.fs.nfs.tools;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -23,6 +24,7 @@ import java.util.Set;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
+import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.logging.Log;
@@ -36,6 +38,7 @@ import org.apache.hadoop.fs.nfs.NFSv3FileSystem;
 public class Nfs3Console {
 
   static URI hostname;
+  static List<String> endpoints = new ArrayList<String>();
   static String mountPath;
   static List<String> tests;
   
@@ -43,16 +46,9 @@ public class Nfs3Console {
   
   public final static Log LOG = LogFactory.getLog(Nfs3Console.class);
   
-  public final static Set<String> TESTS;
-  
-  static {
-    TESTS = new HashSet<String>();
-    TESTS.add("connect");
-    
-  }
-  
   public static void main(String args[]) throws Exception {
   
+    args = new String[] {"-h", "10.63.150.50", "-p", "2049", "-m", "/hadoopvol"};
     parseCommandLine(args);
     
     // Setup a configuration
@@ -60,14 +56,19 @@ public class Nfs3Console {
     config.setBoolean("mambo.test", false);
     config.set("fs.nfs.mountdir", mountPath);
     config.set("fs.nfs.auth.flavor", "AUTH_SYS");
+    config.set("fs.nfs.extraendpoints", "" + endpoints.size());
+    for(int i = 0; i < endpoints.size(); ++i) {
+        config.set("fs.nfs.endpoint." + (i+1), endpoints.get(i).toString());
+    }
     
     // Connect to NFS server
     nfs = new NFSv3FileSystem(hostname, config);
     nfs.initialize(hostname, config);
+    nfs.listStatus(new Path("/"));
     
     // Run different tests
     checkIntegrity();
-    measureReadBandwidth();
+    //measureReadBandwidth();
     
     // Shutdown
     nfs.close();
@@ -79,10 +80,14 @@ public class Nfs3Console {
     final Options options = new Options();
     
     // Get NFS server details
+    Option opt;
+    
     options.addOption("h", "hostname", true, "NFS server hostname, e.g., nfs://server.com:2049/mountpath");
     options.addOption("p", "port", true, "NFS server port (optional)");
     options.addOption("m", "mount-dir", true, "NFS mount directory, e.g., /mnt/nfs");
-    //options.addOption("t", "test", true, "Choose a test to run");
+    opt = new Option("e", "endpoint", true, "NFS additional endpoints");
+    opt.setArgs(64);
+    options.addOption(opt);
     
     // Parse the command line
     try {
@@ -95,11 +100,14 @@ public class Nfs3Console {
       if(commandLine.hasOption('m')) {
         mountPath = commandLine.getOptionValue('m', "/");
       }
-      /*
-      if(commandLine.hasOption('t')) {
-        String test = commandLine.getOptionValue('t');
+      if(commandLine.hasOption('e')) {
+        String u[] = commandLine.getOptionValues('e');
+        if(u != null) {
+            for(String s: u) {
+                endpoints.add(s);
+            }
+        }
       }
-      */
     } catch(ParseException exception) {
       LOG.error("Could not parse command line options!");
       throw exception;
@@ -144,7 +152,7 @@ public class Nfs3Console {
   private static void measureReadBandwidth() throws Exception {
     
     final int minBufferSize = 65536;
-    final long fileSizes[] = {1024L * 1024L, 1024L * 1024L *1024L, 4096L * 1024L *1024L, 16384L * 1024L *1024L};
+    final long fileSizes[] = {/*1024L * 1024L, 1024L * 1024L *1024L,*/ 4096L * 1024L *1024L/*, 16384L * 1024L *1024L*/};
     final byte buffer[] = new byte[minBufferSize];
     final Random random = new Random();
     

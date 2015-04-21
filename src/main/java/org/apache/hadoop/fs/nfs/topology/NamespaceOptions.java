@@ -13,7 +13,10 @@
  */
 package org.apache.hadoop.fs.nfs.topology;
 
+import java.io.IOException;
+
 import com.google.gson.annotations.Expose;
+
 import org.apache.hadoop.fs.nfs.NFSv3FileSystem;
 
 
@@ -34,6 +37,12 @@ public class NamespaceOptions {
     @Expose
     String nfsGroupname;
     @Expose
+    String nfsUserConfigFile;
+    @Expose
+    String nfsGroupConfigFile;
+    @Expose
+    String nfsUserGroupAuthImpl;
+    @Expose
     int    nfsUid;
     @Expose
     int    nfsGid;
@@ -45,6 +54,8 @@ public class NamespaceOptions {
     int    nfsRpcbindPort;
     @Expose
     String nfsAuthFile;
+    
+    UserGroupAuthentication auth;
     
     public static final int INVALID_PORT = -1;
     
@@ -100,6 +111,14 @@ public class NamespaceOptions {
     public String getNfsGroupname() {
         return nfsGroupname;
     }
+    
+    public String getNFSUserConfigFile() {
+    	return nfsUserConfigFile;
+    }
+    
+    public String getNFSGroupConfigFile() {
+    	return nfsGroupConfigFile;
+    }
 
     public int getNfsUid() {
         return nfsUid;
@@ -123,6 +142,22 @@ public class NamespaceOptions {
 
     public String getNfsAuthFile() {
         return nfsAuthFile;
+    }
+    
+    public String getUserNameFromUserId(String userid) {
+        return auth.getUserNameFromUserId(userid);
+    }
+
+    public String getUserIdFromUserName(String username) {
+        return auth.getUserIdFromUserName(username);
+    }
+
+    public String getGroupNameFromGroupId(String groupid) {
+        return auth.getGroupNameFromGroupId(groupid);
+    }
+
+    public String getGroupIdFromGroupName(String groupname) {
+        return auth.getGroupIdFromGroupName(groupname);
     }
     
     public void setNfsExportPath(String nfsExportPath) {
@@ -153,6 +188,14 @@ public class NamespaceOptions {
         this.nfsGroupname = groupname;
     }
     
+    public void setNfsUserConfigFile(String userConfigFile) {
+    	this.nfsUserConfigFile = userConfigFile;
+    }
+    
+    public void setNfsGroupConfigFile(String groupConfigFile) {
+    	this.nfsGroupConfigFile = groupConfigFile;
+    }
+    
     public void setNfsUid(int uid) {
         this.nfsUid = uid;
     }
@@ -173,5 +216,17 @@ public class NamespaceOptions {
         this.nfsRpcbindPort = port;
     }
     
-    
+    public boolean UserGroupMappingCreated() {
+        return (auth != null);
+    }
+    //TODO
+    public void CreatUserGroupMapping() throws Exception {
+        if (nfsUserGroupAuthImpl == null) {
+            nfsUserGroupAuthImpl = "org.apache.hadoop.fs.nfs.topology.SimpleUserGroupAuthentication";
+        }
+        
+        auth = (UserGroupAuthentication) Class.forName(nfsUserGroupAuthImpl).newInstance();
+        auth = new SimpleUserGroupAuthentication();
+        auth.initialize(nfsUserConfigFile, nfsGroupConfigFile, null);
+    }
 }

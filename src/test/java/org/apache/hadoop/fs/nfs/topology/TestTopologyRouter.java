@@ -53,7 +53,7 @@ public class TestTopologyRouter {
     public void testDefaultNamespace() throws Exception {
         Mapping mapping = new Mapping();
         Namespace ns = mapping.getNamespace(new URI("nfs://localhost:2049/foo/bar"));
-        assertEquals(0,ns.getEndpoints().size());
+        assertEquals(1,ns.getEndpoints().size());
     }
     
     @Test

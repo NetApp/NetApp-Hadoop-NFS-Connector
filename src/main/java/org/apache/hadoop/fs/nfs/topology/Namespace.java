@@ -14,6 +14,8 @@
 package org.apache.hadoop.fs.nfs.topology;
 
 import com.google.gson.annotations.Expose;
+
+import java.io.IOException;
 import java.net.URI;
 import java.util.LinkedList;
 import java.util.List;
@@ -56,6 +58,13 @@ public class Namespace {
     }
     
     public NamespaceOptions getConfiguration() {
+        try {
+            if (!options.UserGroupMappingCreated()) {
+                options.CreatUserGroupMapping();
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
         return options;
     }
     

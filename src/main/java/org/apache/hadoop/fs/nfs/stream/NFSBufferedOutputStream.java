@@ -256,7 +256,7 @@ public class NFSBufferedOutputStream extends OutputStream {
     if (ongoing.size() >= 64) {
       for (Iterator<Future<Write>> iter = ongoing.iterator(); iter.hasNext();) {
         Future<Write> f = iter.next();
-        if (f.isDone()) {
+        if (!f.isDone()) {
           try {
             f.get();
             iter.remove();

@@ -49,6 +49,7 @@ public class MountClient extends RpcClient {
     }
     
     NamespaceOptions options = space.getConfiguration();
+    //Mount will use CredentialsNone no matter what credential is given
     String authScheme = options.getNfsAuthScheme();
     
     if(authScheme != null && (authScheme.equalsIgnoreCase("AUTH_SYS") || authScheme.equalsIgnoreCase("AUTH_UNIX"))) {
@@ -61,7 +62,7 @@ public class MountClient extends RpcClient {
     // Use AUTH_NONE by default
     else {
         credentials = new CredentialsNone();
-    }  
+    }
   }
 
   public MountMNTResponse mnt(String path) throws IOException {

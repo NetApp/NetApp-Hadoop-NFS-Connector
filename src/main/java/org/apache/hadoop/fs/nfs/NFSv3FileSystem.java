@@ -15,6 +15,7 @@
  */
 package org.apache.hadoop.fs.nfs;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
@@ -59,6 +60,7 @@ import org.apache.hadoop.nfs.nfs3.response.REMOVE3Response;
 import org.apache.hadoop.nfs.nfs3.response.RENAME3Response;
 import org.apache.hadoop.nfs.nfs3.response.RMDIR3Response;
 import org.apache.hadoop.nfs.nfs3.response.SETATTR3Response;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.fs.nfs.stream.NFSBufferedInputStream;
 import org.apache.hadoop.fs.nfs.stream.NFSBufferedOutputStream;
@@ -95,8 +97,6 @@ public class NFSv3FileSystem extends FileSystem {
     // from the configuration file will overwrite default values defined above.
     private int NFS_UID;
     private int NFS_GID;
-    private String NFS_USER_NAME;
-    private String NFS_GROUP_NAME;
 
     public static final String NFS_URI_SCHEME = "nfs";
     public static final int FILE_HANDLE_CACHE_SIZE = 1048576;
@@ -144,13 +144,35 @@ public class NFSv3FileSystem extends FileSystem {
             LOG.info("The URI " + uri + " has no additional config defined, resorting to defaults");
             space = new Mapping().buildNamespace(uri);
         }
-
+        
+        
+        //Only when two config files are set and both exist, user/group information will be taken
+        if (space.getConfiguration().getNFSUserConfigFile() != null
+                && space.getConfiguration().getNFSGroupConfigFile() != null) {
+            LOG.info("User config file: " + space.getConfiguration().getNFSUserConfigFile());
+            LOG.info("Group config file: " + space.getConfiguration().getNFSGroupConfigFile());
+            File userConf = new File(space.getConfiguration().getNFSUserConfigFile());
+            File groupConf = new File(space.getConfiguration().getNFSGroupConfigFile());
+            
+            if (userConf.exists() && groupConf.exists()) {
+                UserGroupInformation currentUser = UserGroupInformation.getCurrentUser();
+                String currentUserName = currentUser.getShortUserName();
+                String currentGroupName = currentUser.getPrimaryGroupName();
+                
+                NamespaceOptions option = space.getConfiguration();
+                
+                if(option.getUserIdFromUserName(currentUserName) == null ||
+                        option.getGroupIdFromGroupName(currentGroupName) == null) {
+                    throw new IOException("the userid or groupid mapping has not been set for current user/group");
+                }
+                NFS_UID = Integer.parseInt(option.getUserIdFromUserName(currentUserName));
+                NFS_GID = Integer.parseInt(option.getGroupIdFromGroupName(currentGroupName));
+            }
+        } else {
         // Get configuration from namespace
-        NFS_UID = space.getConfiguration().getNfsUid();
-        NFS_GID = space.getConfiguration().getNfsGid();
-        NFS_USER_NAME = space.getConfiguration().getNfsUsername();
-        NFS_GROUP_NAME = space.getConfiguration().getNfsGroupname();
-
+            NFS_UID = space.getConfiguration().getNfsUid();
+            NFS_GID = space.getConfiguration().getNfsGid();
+        }
         // Initialize router
         // TODO: Make the router class configurable
         router = new SimpleTopologyRouter();
@@ -177,12 +199,7 @@ public class NFSv3FileSystem extends FileSystem {
 
     @Override
     public void close() throws IOException {
-        List<NFSv3FileSystemStore> stores = router.getAllStores();
-        if(stores != null && stores.size() > 0) {
-            for(NFSv3FileSystemStore store : stores) {
-                store.shutdown();
-            }
-        }
+        //close() is not implemented
     }
 
     @Override
@@ -546,14 +563,10 @@ public class NFSv3FileSystem extends FileSystem {
                 path = new Path(path.toString() + Path.SEPARATOR + dir);
             }
             
-            /*
             NFSv3FileSystemStore s = router.getStore(path);
             if(!s.equals(store)) {
-                System.err.println("mkdirs(): path " + f + " parent " + path);
-                System.err.println("mkdirs(): mismatched " + store + " and " + s);
                 throw new IOException("Trying to create directories across junctions");
             }
-            */
             
             FileHandle dirHandle = store.getFileHandle(parentDir, dir, getCredentials());
             if(dirHandle != null) {
@@ -727,9 +740,9 @@ public class NFSv3FileSystem extends FileSystem {
         updateFields.add(SetAttr3.SetAttrField.UID);
         updateFields.add(SetAttr3.SetAttrField.GID);
         updateFields.add(SetAttr3.SetAttrField.MODE);
+        
         Nfs3SetAttr objAttr
                 = new Nfs3SetAttr(permission.toShort(), NFS_UID, NFS_GID, 0, null, null, updateFields);
-
         MKDIR3Response mkdir3Response = store.mkdir(dir, name, objAttr, getCredentials());
         status = mkdir3Response.getStatus();
         if (status != Nfs3Status.NFS3_OK) {
@@ -854,11 +867,40 @@ public class NFSv3FileSystem extends FileSystem {
         if (fileAttr.getType() == NfsFileType.NFSDIR.toValue()) {
             isDir = true;
         }
-
+        
+        NamespaceOptions option = space.getConfiguration();
+        
+        String fileOwner, fileOwnerGroup;
+        Credentials cred = getCredentials();
+        if (cred instanceof CredentialsSys) {
+            /*The userid to username mapping in the config file*/
+            try {
+                if(option.getUserNameFromUserId(String.valueOf(fileAttr.getUid())) != null) {
+                    fileOwner = option.getUserNameFromUserId(String.valueOf(fileAttr.getUid()));
+                } else {
+                    fileOwner = String.valueOf(fileAttr.getUid());
+                }
+    
+                /*The groupid to groupname mapping in the config file*/
+                if(option.getGroupNameFromGroupId(String.valueOf(fileAttr.getGid())) != null) {
+                    fileOwnerGroup = option.getGroupNameFromGroupId(String.valueOf(fileAttr.getGid()));
+                } else {
+                    fileOwnerGroup = String.valueOf(fileAttr.getGid());
+                }
+            } catch (NullPointerException ex) {
+                fileOwner = String.valueOf(fileAttr.getUid());
+                fileOwnerGroup = String.valueOf(fileAttr.getGid());
+            }
+        } else if (cred instanceof CredentialsNone) {
+            fileOwner = String.valueOf(fileAttr.getUid());
+            fileOwnerGroup = String.valueOf(fileAttr.getGid());
+        } else {
+            throw new IOException("The credential type is not supported!");
+        }
         FileStatus fileStatus
                 = new FileStatus(fileAttr.getSize(), isDir, 1, getSplitSize(), fileAttr.getMtime()
                         .getMilliSeconds(), fileAttr.getAtime().getMilliSeconds(), new FsPermission(
-                                (short) fileAttr.getMode()), NFS_USER_NAME, NFS_GROUP_NAME, f.makeQualified(uri,
+                                (short) fileAttr.getMode()), fileOwner, fileOwnerGroup, f.makeQualified(uri,
                                 workingDir));
         return fileStatus;
     }
@@ -885,8 +927,8 @@ public class NFSv3FileSystem extends FileSystem {
         String authScheme = (options.getNfsAuthScheme() == null) ? NamespaceOptions.getDefaultOptions().getNfsAuthScheme() : options.getNfsAuthScheme();
         if (authScheme.equalsIgnoreCase("AUTH_SYS") || authScheme.equalsIgnoreCase("AUTH_UNIX")) {
             CredentialsSys sys = new CredentialsSys();
-            sys.setUID(options.getNfsUid());
-            sys.setGID(options.getNfsGid());
+            sys.setUID(NFS_UID);
+            sys.setGID(NFS_GID);
             sys.setStamp(new Long(System.currentTimeMillis()).intValue());
             return sys;
         } else {
