@@ -58,6 +58,8 @@ In this example, the NFS space would be defined as (we explain the options below
         		"nfsGroupname": "root",
         		"nfsUid": 0,
         		"nfsGid": 0,
+        		"nfsUserConfigFile": "<path-to-json-configuration-file>/nfs-users.json",
+        		"nfsGroupConfigFile": "<path-to-json-configuration-file>/nfs-groups.json",
         		"nfsPort": 2049,
         		"nfsMountPort": -1,
         		"nfsRpcbindPort": 111
@@ -123,7 +125,41 @@ You may just use these numbers in most of the cases but you can also tune them f
 * ```nfsGroupname``` - The Hadoop username to use to access NFS
 * ```nfsUid``` - The NFS uid to access NFS
 * ```nfsGid``` - The NFS gid to access NFS
+* ```nfsUserConfigFile``` - (optional) The path of json file that contains username and uid
+* ```nfsGroupConfigFile``` - (optional) The path of json file that contains groupname and gid
 * ```nfsPort``` - The port for NFS (default is 2049)
 * ```nfsMountPort``` - The port for MOUNT (default is -1 which will then query Portmapper)
 * ```nfsRpcbindPort``` - The port for RPCBIND/PORTMAP (which is 111 by default)
 
+If ```nfsUserConfigFile``` and ```nfsGroupConfigFile``` are both specified, user and group information in these configuration files will be used. Otherwise,  ```nfsUsername```, ```nfsGroupname```, ```nfsUid``` and ```nfsGid``` will be used. If you want to use the config files, you need to make sure the information of user/group that runs the hadoop job is included. They can be defined as below:
+* ```nfsUserConfigFile```:
+```
+{  
+  "usernames":[  
+    {  
+      "userName":"user1",
+      "userID":"100"
+    },
+    {  
+      "userName":"user2",
+      "userID":"101"
+    }
+  ]
+}
+```
+
+* ```nfsGroupConfigFile```:
+```
+{  
+  "groupnames":[  
+    {  
+      "groupName":"group1",
+      "groupID":"200"
+    },
+    {  
+      "groupName":"group2",
+      "groupID":"201"
+    }
+  ]
+}
+```
