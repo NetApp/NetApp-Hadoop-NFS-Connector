@@ -45,6 +45,8 @@ We can also assume that node01 hosts the root volume (exported as /).
 
 In this example, the NFS space would be defined as (we explain the options below):
 ```
+{	
+"spaces": [
 	{
 	    "name": "example",
 	    "uri": "nfs://node01-ip01:2049/",
@@ -87,6 +89,8 @@ In this example, the NFS space would be defined as (we explain the options below
         		}                
 	    ]
 	}
+	]
+}
 ```
 
 This configuration maximizes data locality by issuing NFS requests to the controller that hosts the data. 
