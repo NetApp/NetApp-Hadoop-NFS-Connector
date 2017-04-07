@@ -1,5 +1,6 @@
 NetApp-Hadoop-NFS-Connector
 ===========================
+This site is obsolete. Please use NetApp FAS NFSConnector product from [now.netapp.com](http://mysupport.netapp.com/tools/info/ECMLP2570720I.html?platformID=61127&productID=62124&pcfContentID=ECMLP2570720
 
 Overview
 -------------------------------------
